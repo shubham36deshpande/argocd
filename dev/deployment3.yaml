@@ -6,7 +6,7 @@ metadata:
   name: debug-deployment
   namespace: debug
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: debug-deployment
