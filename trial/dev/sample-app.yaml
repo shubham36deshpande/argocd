@@ -1,42 +1,155 @@
+# airflow-deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: hello-world-deployment
-  labels:
-    app: hello-world
+  name: airflow
 spec:
+  replicas: 1
   selector:
     matchLabels:
-      app: hello-world
-  replicas: 2
+      app: python
   template:
     metadata:
       labels:
-        app: hello-world
+        app: python
     spec:
       containers:
-      - name: hello-world
-        image: bhargavshah86/kube-test:v0.1
-        ports:
-        - containerPort: 80
-        resources:
-          limits:
-            memory: 256Mi
-            cpu: "250m"
-          requests:
-            memory: 128Mi
-            cpu: "80m"
+        - name: airflow
+          image: shubham36deshpande/python_airflow:10
+          ports:
+            - containerPort: 8080
+          env:
+            - name: AIRFLOW_HOME
+              value: /opt/airflow
+          imagePullPolicy: Always
+
 ---
-apiVersion: v1
-kind: Service
+# spark-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
 metadata:
-  name: hello-world
+  name: spark-master
 spec:
+  replicas: 1
   selector:
-    app: hello-world
-  ports:
-    - protocol: TCP
-      port: 80
-      targetPort: 80
-      nodePort: 30081   
-  type: NodePort
+    matchLabels:
+      app: spark-master
+  template:
+    metadata:
+      labels:
+        app: spark-master
+    spec:
+      initContainers:
+        - name: init-mysql-driver
+          image: busybox  # You can use a lightweight image for the initContainer
+          command:
+            - "/bin/sh"
+            - "-c"
+            - "mkdir -p /opt/jars && wget -O /opt/jars/mysql-connector-java-8.0.30.jar https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.30/mysql-connector-java-8.0.30.jar"
+          volumeMounts:
+            - name: jars-volume
+              mountPath: /opt/jars
+      containers:
+        - name: spark-master
+          image: shubham36deshpande/python_spark-master:1
+          ports:
+            - protocol: TCP
+              containerPort: 8090
+          env:
+            - name: SPARK_MODE
+              value: master
+            - name: SPARK_RPC_AUTHENTICATION_ENABLED
+              value: "no"
+            - name: SPARK_RPC_ENCRYPTION_ENABLED
+              value: "no"
+            - name: SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED
+              value: "no"
+            - name: SPARK_SSL_ENABLED
+              value: "no"
+            - name: SPARK_USER
+              value: sparkrythi
+          volumeMounts:
+            - name: jars-volume
+              mountPath: /opt/jars
+      volumes:
+        - name: jars-volume
+          emptyDir: {}    
+          
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spark-worker
+  template:
+    metadata:
+      labels:
+        app: spark-worker
+    spec:
+      initContainers:
+        - name: init-mysql-driver
+          image: busybox  # You can use a lightweight image for the initContainer
+          command:
+            - "/bin/sh"
+            - "-c"
+            - "mkdir -p /opt/jars && wget -O /opt/jars/mysql-connector-java-8.0.30.jar https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.30/mysql-connector-java-8.0.30.jar"
+          volumeMounts:
+            - name: jars-volume
+              mountPath: /opt/jars
+      containers:
+        - name: spark-worker
+          image: shubham36deshpande/python_spark-worker:1
+          env:
+            - name: SPARK_MODE
+              value: worker
+            - name: SPARK_MASTER_URL
+              value: spark://spark-master-service.default:7077
+            - name: SPARK_WORKER_MEMORY
+              value: 1G
+            - name: SPARK_WORKER_CORES
+              value: "1"
+            - name: SPARK_RPC_AUTHENTICATION_ENABLED
+              value: "no"
+            - name: SPARK_RPC_ENCRYPTION_ENABLED
+              value: "no"
+            - name: SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED
+              value: "no"
+            - name: SPARK_SSL_ENABLED
+              value: "no"
+            - name: SPARK_USER
+              value: spark
+          volumeMounts:
+            - name: jars-volume
+              mountPath: /opt/jars
+      volumes:
+        - name: jars-volume
+          emptyDir: {}   
+# mysql deployment
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: bitnami/mysql:latest
+          ports:
+            - containerPort: 3306
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              value: password
+          imagePullPolicy: Always
